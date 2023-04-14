@@ -7,8 +7,9 @@
 #include <fstream>
 
 namespace Shit {
-	static int const kSig{2};
-	static int const kLSig{4};
+	static uint8_t const kSig{2};
+	static uint8_t const kLSig{4};
+	using Func = std::function<bool(uint8_t**,uint8_t**)>;
 
 	template<uint8_t SZ>
 		std::vector<uint8_t> Read(std::ifstream& src){
@@ -20,13 +21,35 @@ namespace Shit {
 		}
 
 	template<uint8_t SZ>
-		void Write(std::ofstream& dst, uint8_t const* pbeg, size_t const sz) {
+		static void Write(std::ofstream& dst, uint8_t const* pbeg, size_t const sz) {
 			dst.write((char*)&sz, SZ);
 			dst.write((char*)pbeg, sz);
 		}
+	template<uint8_t SZ>
+		static auto Write(std::ofstream& dst) -> Func {
+			return [&dst] (uint8_t** ppbeg, uint8_t** ppend) {
+				uint8_t const* pbeg{*ppbeg};
+				uint8_t const* pend{*ppend};
+				size_t const sz{(size_t)(pend - pbeg)};
+				Write<SZ>(dst, pbeg, sz);
+				return true;
+			};
+		}
 
-	static auto Crop(size_t const skip_beg, size_t const skip_end = 0) ->
-		std::function<bool(uint8_t**, uint8_t**)> {
+	static auto Shr(size_t const offset) -> Func {
+			return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
+				(*ppbeg) += offset;
+				return true;
+			};
+		}
+	static auto Shl(size_t const offset) -> Func {
+			return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
+				(*ppbeg) -= offset;
+				return true;
+			};
+		}
+
+	static auto Crop(size_t const skip_beg, size_t const skip_end = 0) -> Func {
 			return [skip_beg, skip_end] (uint8_t** ppbeg, uint8_t** ppend) {
 				uint8_t* pbeg{*ppbeg};
 				pbeg += skip_beg;
@@ -50,32 +73,80 @@ namespace Shit {
 				offset += sizeof(T);
 			};
 		}
-	template<class Save>
-		static auto Mask(std::vector<uint8_t> const& masks,
-							  uint8_t const val,
-							  Save save) ->
-		std::function<bool(uint8_t**,uint8_t**)> {
-			return [masks, val, save] (uint8_t** ppbeg, uint8_t** ppend) {
-				uint8_t const cur{*(*ppbeg)};
-				for (auto const& mask : masks) {
-					if ((mask & cur) == val) {
-						save(mask);
-					}
+	template<class T, class Save>
+		static auto Filter(T const mask, T const val, Save save) -> Func {
+			return [mask, val, save] (uint8_t** ppbeg, uint8_t** ppend) {
+				bool ret{};
+				uint8_t* pbeg{*ppbeg};
+				T const cur{(T)((*(T*)pbeg) & mask)};
+				if (cur == val) {
+					save(cur);
+					ret = true;
+				} else {
+					ret = false;
 				}
-				return true;
+				return ret;
 			};
 		}
-	static auto CleanOffset(uint8_t& offset) ->
-		std::function<bool(uint8_t**,uint8_t**)> {
+	template<class T, class Save>
+		static auto Filter(T const mask, std::vector<T> const& vec, Save save) -> Func {
+			return [mask, vec, save] (uint8_t** ppbeg, uint8_t** ppend) {
+				bool ret{};
+				for (auto const& val : vec) {
+					ret |= Filter<T>(mask, val, save);
+				}
+				return ret;
+			};
+		}
+
+	static auto Empty() -> std::function<bool(uint8_t**,uint8_t**)> {
+		return [] (uint8_t**,uint8_t**) {
+			return true;
+		};
+	}
+	template<class T, class Save>
+		static auto Mask(T const mask, Save save) -> Func {
+			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
+				bool ret{};
+				uint8_t* pbeg{*ppbeg};
+				T const cur{(T)((*(T*)pbeg) & mask)};
+				if (cur) {
+					save(0xFF);
+					ret = true;
+				} else {
+					save(0x00);
+					ret = false;
+				}
+				return ret;
+			};
+		}
+	static auto CleanOffset(uint8_t& offset) -> Func {
+		return [&offset] (...) {
+			offset = 0;
+			return true;
+		};
+	}
+	namespace Check {
+		static auto CheckOffset(uint8_t& offset) -> Func {
 			return [&offset] (...) {
-				offset = 0;
-				return true;
+				return offset <= sizeof(uint64_t);
 			};
 		}
-	static bool OutOfRange(uint8_t** ppbeg, uint8_t** ppend) {
-		uint8_t* pbeg{*ppbeg};
-		uint8_t* pend{*ppend};
-		return pbeg < pend;
+		static bool OutOfRange(uint8_t** ppbeg, uint8_t** ppend) {
+			uint8_t* pbeg{*ppbeg};
+			uint8_t* pend{*ppend};
+			return pbeg < pend;
+		}
+		static auto OutOfRange() -> Func {
+			return [] (uint8_t** ppbeg, uint8_t** ppend) {
+				return OutOfRange(ppbeg, ppend);
+			};
+		}
+		static auto OutOfRange(uint8_t* pbeg) -> Func {
+			return [pbeg] (uint8_t** ppbeg, uint8_t** ppend) {
+				return pbeg < *ppbeg;
+			};
+		}
 	}
 }
 
