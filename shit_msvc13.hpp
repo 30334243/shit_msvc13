@@ -7,10 +7,12 @@
 #include <fstream>
 
 namespace Shit {
+	// CONSTANTS
 	static uint8_t const kSig{2};
 	static uint8_t const kLSig{4};
+	// USING
 	using Func = std::function<bool(uint8_t**,uint8_t**)>;
-
+	// READ
 	template<uint8_t SZ>
 		std::vector<uint8_t> Read(std::ifstream& src){
 			size_t sz{};
@@ -19,12 +21,13 @@ namespace Shit {
 			src.read((char*)ret.data(), ret.size());
 			return ret;
 		}
-
+	// WRITE
 	template<uint8_t SZ>
 		static void Write(std::ofstream& dst, uint8_t const* pbeg, size_t const sz) {
 			dst.write((char*)&sz, SZ);
 			dst.write((char*)pbeg, sz);
 		}
+	// WRITE
 	template<uint8_t SZ>
 		static auto Write(std::ofstream& dst) -> Func {
 			return [&dst] (uint8_t** ppbeg, uint8_t** ppend) {
@@ -35,20 +38,21 @@ namespace Shit {
 				return true;
 			};
 		}
-
+	// SHIFT RIGHT
 	static auto Shr(size_t const offset) -> Func {
 			return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 				(*ppbeg) += offset;
 				return true;
 			};
 		}
+	// SHIFT LEFT
 	static auto Shl(size_t const offset) -> Func {
 			return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 				(*ppbeg) -= offset;
 				return true;
 			};
 		}
-
+	// CROP
 	static auto Crop(size_t const skip_beg, size_t const skip_end = 0) -> Func {
 			return [skip_beg, skip_end] (uint8_t** ppbeg, uint8_t** ppend) {
 				uint8_t* pbeg{*ppbeg};
@@ -89,11 +93,11 @@ namespace Shit {
 			};
 		}
 	template<class T, class Save>
-		static auto Filter(T const mask, std::vector<T> const& vec, Save save) -> Func {
+		static auto Filter(T const mask, std::vector<uint64_t> const& vec, Save save) -> Func {
 			return [mask, vec, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
-				for (auto const& val : vec) {
-					ret |= Filter<T>(mask, val, save);
+				for (auto& val : vec) {
+					ret |= Filter<T>(mask, (T)val, save)(ppbeg, ppend);
 				}
 				return ret;
 			};
@@ -118,6 +122,15 @@ namespace Shit {
 					ret = false;
 				}
 				return ret;
+			};
+		}
+	// MASK 3
+	template<class T, class Save>
+		static auto Mask(Save save) -> std::function<Func(T const)> {
+			return [save] (T const mask) {
+				return [save, mask] (uint8_t** pbeg, uint8_t** pend) {
+					return Mask(mask, save);
+				};
 			};
 		}
 	static auto CleanOffset(uint8_t& offset) -> Func {
