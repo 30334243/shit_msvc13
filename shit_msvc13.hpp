@@ -25,6 +25,12 @@ namespace Shit {
 			0b00111111,
 			0b01111111
 	};
+	static const std::vector<uint8_t> table_fill{
+			0,
+			1,		3,		7,
+			0xF,	0x1F,	0x3F, 0x7F,
+			0xFF
+		};
 	// USING
 	using Func = std::function<bool(uint8_t**,uint8_t**)>;
 	// READ
@@ -85,6 +91,16 @@ namespace Shit {
 			return true;
 		};
 	}
+	// ROR
+	uint8_t Ror(uint8_t const offset, uint8_t const val){
+		uint8_t ret{};
+		if (offset < 8) {
+			uint8_t const hi = 8 - offset;
+			table_fill[3];
+			ret = ((table_fill[hi] & (val >> offset)) | ((table_fill[offset] & val) << hi));
+		}
+		return ret;
+	}
 	// SHIFT RIGHT IN BITS
 	static auto ShrInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
@@ -92,9 +108,12 @@ namespace Shit {
 			uint8_t* tmp_pbeg{pbeg};
 			size_t const offset_in_bits{offset <= 8 ? 1 : offset / 8};
 			uint8_t const offset_in_bytes{(uint8_t)(offset - offset_in_bits)};
-			*tmp_pbeg = ((*tmp_pbeg) >> offset_in_bits) | (*(*ppend) & bits[offset_in_bits]);
+			uint8_t old{};
 			while (pbeg < *ppend && (pbeg+1) < *ppend) {
-				*tmp_pbeg = ((*(tmp_pbeg+1)) >> offset_in_bits) | ((*tmp_pbeg) & bits[offset_in_bits]);
+				uint8_t const one = (*tmp_pbeg) & bits[offset_in_bits];
+				*tmp_pbeg = (*tmp_pbeg) >> offset_in_bits;
+				old = (*(tmp_pbeg)+1) & bits[offset_in_bits];
+				*(tmp_pbeg+1) = (*(tmp_pbeg+1) >> offset_in_bits) | Ror(offset_in_bits, one);
 				++tmp_pbeg;
 			}
 			if (tmp_pbeg < *ppend) {
