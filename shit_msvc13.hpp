@@ -73,53 +73,55 @@ namespace Shit {
 			return true;
 		};
 	}
-	// SHIFT LEFT IN BITS
-	static auto ShlInBits(size_t const offset) -> Func {
-		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			uint8_t* pbeg{*ppbeg};
-			size_t const offset_in_bits{offset <= 8 ? 1 : offset / 8};
-			uint8_t const offset_in_bytes{(uint8_t)(offset - offset_in_bits)};
-			while (pbeg < *ppend && (pbeg+1) < *ppend) {
-				*pbeg = ((*pbeg) << offset_in_bits) | ((*(pbeg+1)) & bits[offset_in_bits]);
-				++pbeg;
-			}
-			pbeg -= offset_in_bytes;
-			if (pbeg < *ppend) {
-				*pbeg = (*pbeg) << offset_in_bits;
-				++pbeg;
-			}
-			return true;
-		};
-	}
 	// ROR
 	uint8_t Ror(uint8_t const offset, uint8_t const val){
 		uint8_t ret{};
 		if (offset < 8) {
-			uint8_t const hi = 8 - offset;
-			table_fill[3];
-			ret = ((table_fill[hi] & (val >> offset)) | ((table_fill[offset] & val) << hi));
+			uint8_t const hi{(uint8_t)(8 - offset)};
+			ret = (val >> offset) | (val << hi);
+		}
+		return ret;
+	}
+	// ROL
+	uint8_t Rol(uint8_t const offset, uint8_t const val){
+		uint8_t ret{};
+		if (offset < 8) {
+			uint8_t const hi{(uint8_t)(8 - offset)};
+			ret = (val << offset) | (val >> hi);
 		}
 		return ret;
 	}
 	// SHIFT RIGHT IN BITS
 	static auto ShrInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			uint8_t* pbeg{*ppbeg};
-			uint8_t* tmp_pbeg{pbeg};
-			size_t const offset_in_bits{offset <= 8 ? 1 : offset / 8};
-			uint8_t const offset_in_bytes{(uint8_t)(offset - offset_in_bits)};
+			*ppbeg = (*ppbeg) + (offset < 8 ? 0 : (offset / 8));
+			uint8_t* tmp_pbeg{*ppbeg};
+			size_t const offset_in_bits{offset%8};
 			uint8_t old{};
-			while (pbeg < *ppend && (pbeg+1) < *ppend) {
-				uint8_t const one = (*tmp_pbeg) & bits[offset_in_bits];
-				*tmp_pbeg = (*tmp_pbeg) >> offset_in_bits;
-				old = (*(tmp_pbeg)+1) & bits[offset_in_bits];
-				*(tmp_pbeg+1) = (*(tmp_pbeg+1) >> offset_in_bits) | Ror(offset_in_bits, one);
+			while (tmp_pbeg < *ppend) {
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> offset_in_bits))};
+				uint8_t last{(uint8_t)((*tmp_pbeg) & bits[offset_in_bits])};
+				old = Ror(offset_in_bits, last);
+				*tmp_pbeg = tmp;
 				++tmp_pbeg;
 			}
-			if (tmp_pbeg < *ppend) {
-				*tmp_pbeg = (*tmp_pbeg) << offset_in_bits;
+			return true;
+		};
+	}
+	// SHIFT LEFT IN BITS
+	static auto ShlInBits(size_t const offset) -> Func {
+		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
+			*ppbeg = (*ppbeg) - (offset < 8 ? 0 : (offset / 8));
+			uint8_t* tmp_pend{*ppend-1};
+			size_t const offset_in_bits{offset%8};
+			uint8_t old{};
+			while (*ppbeg <= tmp_pend) {
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << offset_in_bits))};
+				old = Rol(offset_in_bits, *tmp_pend);
+				old &= bits[offset_in_bits];
+				*tmp_pend = tmp;
+				--tmp_pend;
 			}
-			pbeg += offset_in_bytes;
 			return true;
 		};
 	}
