@@ -12,6 +12,10 @@
 namespace Shit {
 	uint8_t* gpbeg = nullptr;
 	uint8_t* gpend = nullptr;
+	uint8_t gbeg{};
+	uint8_t gend{};
+	uint8_t gleft_offset_in_bits{};
+	uint8_t gright_offset_in_bits{};
 	// CONSTANTS
 	static uint8_t const kSig{2};
 	static uint8_t const kLSig{4};
@@ -94,14 +98,24 @@ namespace Shit {
 	// SHIFT RIGHT IN BITS
 	static auto ShrInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			*ppbeg = (*ppbeg) + (offset < 8 ? 0 : (offset / 8));
 			uint8_t* tmp_pbeg{*ppbeg};
-			size_t const offset_in_bits{offset%8};
+			gright_offset_in_bits = (gright_offset_in_bits + (offset%8))%8;
 			uint8_t old{};
+			if (gbeg) {
+				*tmp_pbeg = ((*tmp_pbeg) >> gleft_offset_in_bits);
+				gleft_offset_in_bits = 0;
+				gbeg = 0;
+				++tmp_pbeg;
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> gright_offset_in_bits))};
+				uint8_t last{(uint8_t)((*tmp_pbeg) & bits[gright_offset_in_bits])};
+				old = Ror(gright_offset_in_bits, last);
+				*tmp_pbeg = tmp;
+				++tmp_pbeg;
+			}
 			while (tmp_pbeg < *ppend) {
-				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> offset_in_bits))};
-				uint8_t last{(uint8_t)((*tmp_pbeg) & bits[offset_in_bits])};
-				old = Ror(offset_in_bits, last);
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> gright_offset_in_bits))};
+				gend = (uint8_t)((*tmp_pbeg) & bits[gright_offset_in_bits]);
+				old = Ror(gright_offset_in_bits, gend);
 				*tmp_pbeg = tmp;
 				++tmp_pbeg;
 			}
@@ -111,14 +125,16 @@ namespace Shit {
 	// SHIFT LEFT IN BITS
 	static auto ShlInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			*ppbeg = (*ppbeg) - (offset < 8 ? 0 : (offset / 8));
 			uint8_t* tmp_pend{*ppend-1};
-			size_t const offset_in_bits{offset%8};
+			gbeg = *(*(ppbeg));
+			gleft_offset_in_bits = (gleft_offset_in_bits + (offset%8))%8;
+			if (gend) {
+			}
 			uint8_t old{};
 			while (*ppbeg <= tmp_pend) {
-				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << offset_in_bits))};
-				old = Rol(offset_in_bits, *tmp_pend);
-				old &= bits[offset_in_bits];
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << gleft_offset_in_bits))};
+				old = Rol(gleft_offset_in_bits, *tmp_pend);
+				old &= bits[gleft_offset_in_bits];
 				*tmp_pend = tmp;
 				--tmp_pend;
 			}
