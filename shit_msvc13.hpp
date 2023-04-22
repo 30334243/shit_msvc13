@@ -7,6 +7,7 @@
 #include <fstream>
 #include <memory>
 #include <cmath>
+#include <iostream>
 
 // SHIT
 namespace Shit {
@@ -14,8 +15,13 @@ namespace Shit {
 	uint8_t* gpend = nullptr;
 	uint8_t gbeg{};
 	uint8_t gend{};
-	uint8_t gleft_offset_in_bits{};
-	uint8_t gright_offset_in_bits{};
+	// INIT
+	void Init(uint8_t* pbeg, uint8_t* pend) {
+		gpbeg = pbeg;
+		gpend = pend;
+		gbeg = 0;
+		gend = 0;
+	}
 	// CONSTANTS
 	static uint8_t const kSig{2};
 	static uint8_t const kLSig{4};
@@ -30,11 +36,11 @@ namespace Shit {
 			0b01111111
 	};
 	static const std::vector<uint8_t> table_fill{
-			0,
+		0,
 			1,		3,		7,
 			0xF,	0x1F,	0x3F, 0x7F,
 			0xFF
-		};
+	};
 	// USING
 	using Func = std::function<bool(uint8_t**,uint8_t**)>;
 	// READ
@@ -99,23 +105,11 @@ namespace Shit {
 	static auto ShrInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* tmp_pbeg{*ppbeg};
-			gright_offset_in_bits = (gright_offset_in_bits + (offset%8))%8;
 			uint8_t old{};
-			if (gbeg) {
-				*tmp_pbeg = ((*tmp_pbeg) >> gleft_offset_in_bits);
-				gleft_offset_in_bits = 0;
-				gbeg = 0;
-				++tmp_pbeg;
-				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> gright_offset_in_bits))};
-				uint8_t last{(uint8_t)((*tmp_pbeg) & bits[gright_offset_in_bits])};
-				old = Ror(gright_offset_in_bits, last);
-				*tmp_pbeg = tmp;
-				++tmp_pbeg;
-			}
 			while (tmp_pbeg < *ppend) {
-				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> gright_offset_in_bits))};
-				gend = (uint8_t)((*tmp_pbeg) & bits[gright_offset_in_bits]);
-				old = Ror(gright_offset_in_bits, gend);
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> offset))};
+				uint8_t last{(uint8_t)((*tmp_pbeg) & bits[offset])};
+				old = Ror(offset, last);
 				*tmp_pbeg = tmp;
 				++tmp_pbeg;
 			}
@@ -126,15 +120,11 @@ namespace Shit {
 	static auto ShlInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* tmp_pend{*ppend-1};
-			gbeg = *(*(ppbeg));
-			gleft_offset_in_bits = (gleft_offset_in_bits + (offset%8))%8;
-			if (gend) {
-			}
 			uint8_t old{};
 			while (*ppbeg <= tmp_pend) {
-				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << gleft_offset_in_bits))};
-				old = Rol(gleft_offset_in_bits, *tmp_pend);
-				old &= bits[gleft_offset_in_bits];
+				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << offset))};
+				old = Rol(offset, *tmp_pend);
+				old &= bits[offset];
 				*tmp_pend = tmp;
 				--tmp_pend;
 			}
@@ -349,9 +339,13 @@ namespace Shit {
 			};
 		}
 		// OUT OF RANGE
-		static auto OutOfRange(size_t const beg, size_t const end) -> Func {
-			return [beg, end] (uint8_t**, uint8_t**) {
-				return (gpbeg + beg) < (gpend - end);
+		static auto OutOfRange(size_t const beg, size_t const end, size_t& counter) -> Func {
+			return [beg, end, &counter] (uint8_t**, uint8_t**) {
+				bool ret{(gpbeg + beg) < (gpend - end)};
+				if (!ret) {
+					std::cout << "Out of range packet: " << std::to_string(counter) << std::endl;
+				}
+				return ret;
 			};
 		}
 		// OUT OR RANGE RIGHT IN BITS
