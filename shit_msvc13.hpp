@@ -22,7 +22,7 @@ namespace Shit {
 		gbeg = 0;
 		gend = 0;
 	}
-	// CONSTANTS
+// CONSTANTS
 	static uint8_t const kSig{2};
 	static uint8_t const kLSig{4};
 	static std::vector<uint8_t> bits{
@@ -104,9 +104,9 @@ namespace Shit {
 	// SHIFT RIGHT IN BITS
 	static auto ShrInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			uint8_t* tmp_pbeg{*ppbeg};
+			uint8_t* tmp_pbeg{(*ppbeg)-1};
 			uint8_t old{};
-			while (tmp_pbeg < *ppend) {
+			while (tmp_pbeg < (*ppend)+1) {
 				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> offset))};
 				uint8_t last{(uint8_t)((*tmp_pbeg) & bits[offset])};
 				old = Ror(offset, last);
@@ -119,9 +119,9 @@ namespace Shit {
 	// SHIFT LEFT IN BITS
 	static auto ShlInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			uint8_t* tmp_pend{*ppend-1};
+			uint8_t* tmp_pend{*ppend};
 			uint8_t old{};
-			while (*ppbeg <= tmp_pend) {
+			while ((*ppbeg)-1 <= tmp_pend) {
 				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << offset))};
 				old = Rol(offset, *tmp_pend);
 				old &= bits[offset];
@@ -312,6 +312,20 @@ namespace Shit {
 				return ret;
 			};
 		}
+	// INSERT
+	static auto Insert(uint64_t const sz,
+							 std::vector<uint8_t> const& data) -> Func {
+		return [sz, data] (uint8_t** ppbeg, uint8_t** ppend) {
+			uint8_t* pbeg{*ppbeg};
+			int64_t const offset{pbeg - gpbeg};
+			if (sz < offset) {
+				std::copy(pbeg - (offset - sz), pbeg, gpbeg);
+			}
+			std::copy(data.begin(), data.end(), pbeg - sz);
+			*ppbeg = pbeg - sz;
+			return true;
+		};
+	}
 	// CLEAN OFFSET
 	static auto CleanOffset(uint8_t& offset) -> Func {
 		return [&offset] (...) {
@@ -363,7 +377,13 @@ namespace Shit {
 		// OUT OR RANGE LEFT
 		static auto OutOfRangeLeft(size_t const offset) -> Func {
 			return [offset] (uint8_t** ppbeg, uint8_t**) {
-				return gpbeg <= ((*ppbeg) - offset);
+				bool ret{};
+				if (gpbeg <= ((*ppbeg) - offset)) {
+					ret = true;
+				} else {
+					std::cout << "Out of range left: " << std::distance(gpbeg,  ((*ppbeg) - offset)) <<  std::endl;
+				}
+				return ret;
 			};
 		}
 	}
