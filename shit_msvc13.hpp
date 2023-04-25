@@ -136,9 +136,11 @@ namespace Shit {
 		return [skip_beg, skip_end] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			pbeg += skip_beg;
+			gpbeg += skip_beg;
 			*ppbeg = pbeg;
 			uint8_t* pend{*ppend};
 			pend -= skip_end;
+			gpend = pend;
 			*ppend = pend;
 			return true;
 		};
@@ -326,6 +328,13 @@ namespace Shit {
 			return true;
 		};
 	}
+	// REPLACE
+	static auto Replace(std::vector<uint8_t> const& data) -> Func {
+		return [data] (uint8_t** ppbeg, uint8_t** ppend) {
+			std::copy(data.begin(), data.end(), *ppbeg);
+			return true;
+		};
+	}
 	// CLEAN OFFSET
 	static auto CleanOffset(uint8_t& offset) -> Func {
 		return [&offset] (...) {
@@ -362,16 +371,16 @@ namespace Shit {
 				return ret;
 			};
 		}
-		// OUT OR RANGE RIGHT IN BITS
-		static auto OutOfRangeRightInBits(size_t const offset) -> Func {
-			return [offset] (uint8_t** ppbeg, uint8_t**) {
-				return ((*ppbeg) + (size_t)(std::ceil(offset/8))) < gpend;
-			};
-		}
 		// OUT OR RANGE RIGHT
 		static auto OutOfRangeRight(size_t const offset) -> Func {
 			return [offset] (uint8_t** ppbeg, uint8_t**) {
-				return ((*ppbeg) + offset) < gpend;
+				bool ret{};
+				if (((*ppbeg) + offset) < gpend) {
+					ret = true;
+				} else {
+					std::cout << "Out of range left: " << std::distance(((*ppbeg) - offset), gpbeg) <<  std::endl;
+				}
+				return ret;
 			};
 		}
 		// OUT OR RANGE LEFT
