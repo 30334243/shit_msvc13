@@ -8,6 +8,7 @@
 #include <memory>
 #include <cmath>
 #include <iostream>
+#include <string>
 
 // SHIT
 namespace Shit {
@@ -22,20 +23,10 @@ namespace Shit {
 		gbeg = 0;
 		gend = 0;
 	}
-// CONSTANTS
+	// CONSTANTS
 	static uint8_t const kSig{2};
 	static uint8_t const kLSig{4};
-	static std::vector<uint8_t> bits{
-		0,
-			0b00000001,
-			0b00000011,
-			0b00000111,
-			0b00001111,
-			0b00011111,
-			0b00111111,
-			0b01111111
-	};
-	static const std::vector<uint8_t> table_fill{
+	static const std::vector<uint8_t> bits{
 		0,
 			1,		3,		7,
 			0xF,	0x1F,	0x3F, 0x7F,
@@ -136,27 +127,28 @@ namespace Shit {
 		return [skip_beg, skip_end] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			pbeg += skip_beg;
-			gpbeg += skip_beg;
+			gpbeg = pbeg;
 			*ppbeg = pbeg;
 			uint8_t* pend{*ppend};
 			pend -= skip_end;
-			gpend = pend;
+			gpend -= skip_end;
 			*ppend = pend;
 			return true;
 		};
 	}
 	// SAVE TO LID
-	static void SaveToLid(uint8_t const mask,
-								 uint64_t& lid,
-								 uint8_t const offset) {
-		*(((uint8_t*)&lid)+offset) = mask;
-	}
+	template<class T>
+		static void SaveToLid(T const mask,
+									 uint64_t& lid,
+									 uint8_t const offset) {
+			*(((T*)&lid)+offset) = mask;
+		}
 	// SAVE TO LID
 	template<class T>
 		static auto SaveToLid(uint64_t& lid, uint8_t& offset) ->
 		std::function<void(T const)> {
 			return [&lid, &offset] (T const mask) {
-				SaveToLid(mask, lid, offset);
+				SaveToLid<T>(mask, lid, offset);
 				offset += sizeof(T);
 			};
 		}
@@ -166,6 +158,7 @@ namespace Shit {
 			return [mask, val, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
+				auto d = (T)(*(T*)pbeg);
 				T const cur{(T)((*(T*)pbeg) & mask)};
 				if (cur == val) {
 					save(cur);
@@ -274,15 +267,29 @@ namespace Shit {
 				return ret;
 			};
 		}
-	// EMPTY
-	static auto Empty() -> std::function<bool(uint8_t**,uint8_t**)> {
-		return [] (uint8_t**,uint8_t**) {
-			return true;
-		};
-	}
-	// MASK
+	// SPLIT
 	template<class T, class Save>
-		static auto Mask(T const mask, Save save) -> Func {
+		static auto Split(T const mask, Save save) -> Func {
+			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
+				uint8_t* pbeg{*ppbeg};
+				T const cur{(T)((*(T*)pbeg) & mask)};
+				save(cur);
+				return true;
+			};
+		}
+	// SPLIT NOT
+	template<class T, class Save>
+		static auto SplitNot(T const mask, Save save) -> Func {
+			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
+				uint8_t* pbeg{*ppbeg};
+				T const cur{(T)((*(T*)pbeg) & mask)};
+				save(~cur);
+				return true;
+			};
+		}
+	// AND
+	template<class T, class Save>
+		static auto And(T const mask, Save save) -> Func {
 			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -297,9 +304,9 @@ namespace Shit {
 				return ret;
 			};
 		}
-	// MASK NOT
+	// AND NOT
 	template<class T, class Save>
-		static auto MaskNot(T const mask, Save save) -> Func {
+		static auto AndNot(T const mask, Save save) -> Func {
 			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -319,12 +326,11 @@ namespace Shit {
 							 std::vector<uint8_t> const& data) -> Func {
 		return [sz, data] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
-			int64_t const offset{pbeg - gpbeg};
-			if (sz < offset) {
-				std::copy(pbeg - (offset - sz), pbeg, gpbeg);
-			}
-			std::copy(data.begin(), data.end(), pbeg - sz);
-			*ppbeg = pbeg - sz;
+			uint8_t* pend{*ppend};
+			std::copy(pbeg, pend, pbeg + data.size());
+			std::copy(data.begin(), data.end(), pbeg);
+			pend += data.size();
+			*ppend = pend;
 			return true;
 		};
 	}
@@ -335,18 +341,18 @@ namespace Shit {
 			return true;
 		};
 	}
-	// CLEAN OFFSET
-	static auto CleanOffset(uint8_t& offset) -> Func {
-		return [&offset] (...) {
-			offset = 0;
-			return true;
-		};
-	}
-	// CHECK OFFSET
+	// CHECK
 	namespace Check {
-		static auto CheckOffset(uint8_t& offset) -> Func {
-			return [&offset] (...) {
-				return offset <= sizeof(uint64_t);
+		// LID
+		static auto Lid(uint8_t& offset, std::string& msg) -> Func {
+			return [&offset, &msg] (...) {
+				bool ret{};
+				if (offset <= sizeof(uint64_t)) {
+					ret = true;
+				} else {
+					msg = "LID overflow";
+				}
+				return ret;
 			};
 		}
 		// OUT OF RANGE
@@ -362,35 +368,38 @@ namespace Shit {
 			};
 		}
 		// OUT OF RANGE
-		static auto OutOfRange(size_t const beg, size_t const end, size_t& counter) -> Func {
-			return [beg, end, &counter] (uint8_t**, uint8_t**) {
+		static auto OutOfRange(size_t const beg,
+									  size_t const end,
+									  size_t& counter,
+									  std::string& msg) -> Func {
+			return [beg, end, &counter, &msg] (uint8_t**, uint8_t**) {
 				bool ret{(gpbeg + beg) < (gpend - end)};
 				if (!ret) {
-					std::cout << "Out of range packet: " << std::to_string(counter) << std::endl;
+					msg = "Out of range packet: " + std::to_string(counter);
 				}
 				return ret;
 			};
 		}
 		// OUT OR RANGE RIGHT
-		static auto OutOfRangeRight(size_t const offset) -> Func {
-			return [offset] (uint8_t** ppbeg, uint8_t**) {
+		static auto OutOfRangeRight(size_t const offset, std::string& msg) -> Func {
+			return [offset, &msg] (uint8_t** ppbeg, uint8_t**) {
 				bool ret{};
 				if (((*ppbeg) + offset) < gpend) {
 					ret = true;
 				} else {
-					std::cout << "Out of range left: " << std::distance(((*ppbeg) - offset), gpbeg) <<  std::endl;
+					msg = "Out of range right: " + std::to_string(std::distance(((*ppbeg) - offset), gpbeg));
 				}
 				return ret;
 			};
 		}
 		// OUT OR RANGE LEFT
-		static auto OutOfRangeLeft(size_t const offset) -> Func {
-			return [offset] (uint8_t** ppbeg, uint8_t**) {
+		static auto OutOfRangeLeft(size_t const offset, std::string& msg) -> Func {
+			return [offset, &msg] (uint8_t** ppbeg, uint8_t**) {
 				bool ret{};
 				if (gpbeg <= ((*ppbeg) - offset)) {
 					ret = true;
 				} else {
-					std::cout << "Out of range left: " << std::distance(gpbeg,  ((*ppbeg) - offset)) <<  std::endl;
+					msg = "Out of range left: " + std::to_string(std::distance(((*ppbeg) - offset), gpbeg));
 				}
 				return ret;
 			};
