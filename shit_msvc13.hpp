@@ -47,7 +47,7 @@ namespace Shit {
 	static auto Test(std::vector<uint8_t>& vec) -> Func {
 		return [&vec] (uint8_t** ppbeg, uint8_t** ppend) {
 			vec.resize(*ppend - *ppbeg);
-//			std::copy(*ppbeg, *ppend, vec.data());
+			std::copy(*ppbeg, *ppend, vec.data());
 			return true;
 		};
 	}
@@ -68,6 +68,39 @@ namespace Shit {
 				return true;
 			};
 		}
+	// INVERSION
+	auto Inversion() -> Func {
+		return [] (uint8_t** ppbeg, uint8_t** ppend) {
+			uint8_t* pbeg{*ppbeg};
+			while (pbeg < *ppend) {
+				*pbeg = ~(*pbeg);
+				++pbeg;
+			}
+			return true;
+		};
+	}
+	// XOR
+	auto Xor(std::vector<uint8_t> const& args) -> Func {
+		return [args] (uint8_t** ppbeg, uint8_t** ppend) {
+			uint8_t* pbeg{*ppbeg};
+			for (auto& elm : args) {
+				*pbeg ^= elm;
+				++pbeg;
+			}
+			return true;
+		};
+	}
+	// MOD
+	auto Mod(std::vector<uint8_t> const& args) -> Func {
+		return [args] (uint8_t** ppbeg, uint8_t** ppend) {
+			uint8_t* pbeg{*ppbeg};
+			for (auto& elm : args) {
+				*pbeg %= elm;
+				++pbeg;
+			}
+			return true;
+		};
+	}
 	// SHIFT RIGHT
 	static auto Shr(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
@@ -380,16 +413,16 @@ namespace Shit {
 			return [beg, end, &counter, &msg] (uint8_t**, uint8_t**) {
 				bool ret{(gpbeg + beg) < (gpend - end)};
 				if (!ret) {
-					msg = "Out of range packet: " + std::to_string(counter);
+					msg = "Out of range. Packet: " + std::to_string(counter);
 				}
 				return ret;
 			};
 		}
-		// OUT OR RANGE RIGHT
+		// OUT OF RANGE RIGHT
 		static auto OutOfRangeRight(size_t const offset, std::string& msg) -> Func {
 			return [offset, &msg] (uint8_t** ppbeg, uint8_t**) {
 				bool ret{};
-				if (((*ppbeg) + offset) < gpend) {
+				if (((*ppbeg) + offset) <= gpend) {
 					ret = true;
 				} else {
 					msg = "Out of range: " + std::to_string(std::distance(((*ppbeg) + offset), gpend));
@@ -397,7 +430,7 @@ namespace Shit {
 				return ret;
 			};
 		}
-		// OUT OR RANGE LEFT
+		// OUT OF RANGE LEFT
 		static auto OutOfRangeLeft(size_t const offset, std::string& msg) -> Func {
 			return [offset, &msg] (uint8_t** ppbeg, uint8_t**) {
 				bool ret{};
