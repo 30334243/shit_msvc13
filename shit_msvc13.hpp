@@ -47,7 +47,7 @@ namespace Shit {
 	static auto Test(std::vector<uint8_t>& vec) -> Func {
 		return [&vec] (uint8_t** ppbeg, uint8_t** ppend) {
 			vec.resize(*ppend - *ppbeg);
-			std::copy(*ppbeg, *ppend, vec.data());
+//			std::copy(*ppbeg, *ppend, vec.data());
 			return true;
 		};
 	}
@@ -103,7 +103,7 @@ namespace Shit {
 	// SHIFT RIGHT IN BITS
 	static auto ShrInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			uint8_t* tmp_pbeg{(*ppbeg)-1};
+			uint8_t* tmp_pbeg{(*ppbeg)};
 			uint8_t old{};
 			while (tmp_pbeg < (*ppend)+1) {
 				uint8_t tmp{(uint8_t)(old | ((*tmp_pbeg) >> offset))};
@@ -120,7 +120,6 @@ namespace Shit {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* tmp_pend{(*ppend)+1};
 			uint8_t old{};
-			std::copy(*ppbeg, *ppend, (*ppbeg)+1);
 			while (*ppbeg <= tmp_pend) {
 				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << offset))};
 				old = Rol(offset, *tmp_pend);
