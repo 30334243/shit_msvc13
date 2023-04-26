@@ -43,6 +43,14 @@ namespace Shit {
 			src.read((char*)ret.data(), ret.size());
 			return ret;
 		}
+	// TEST
+	static auto Test(std::vector<uint8_t>& vec) -> Func {
+		return [&vec] (uint8_t** ppbeg, uint8_t** ppend) {
+			vec.resize(*ppend - *ppbeg);
+			std::copy(*ppbeg, *ppend, vec.data());
+			return true;
+		};
+	}
 	// WRITE
 	template<uint8_t SZ>
 		static void Write(std::ofstream& dst, uint8_t const* pbeg, size_t const sz) {
@@ -84,7 +92,7 @@ namespace Shit {
 		return ret;
 	}
 	// ROL
-	uint8_t Rol(uint8_t const offset, uint8_t const val){
+	uint8_t Rol(size_t const offset, uint8_t const val){
 		uint8_t ret{};
 		if (offset < 8) {
 			uint8_t const hi{(uint8_t)(8 - offset)};
@@ -110,9 +118,10 @@ namespace Shit {
 	// SHIFT LEFT IN BITS
 	static auto ShlInBits(size_t const offset) -> Func {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
-			uint8_t* tmp_pend{*ppend};
+			uint8_t* tmp_pend{(*ppend)+1};
 			uint8_t old{};
-			while ((*ppbeg)-1 <= tmp_pend) {
+			std::copy(*ppbeg, *ppend, (*ppbeg)+1);
+			while (*ppbeg <= tmp_pend) {
 				uint8_t tmp{(uint8_t)(old | ((*tmp_pend) << offset))};
 				old = Rol(offset, *tmp_pend);
 				old &= bits[offset];
@@ -140,12 +149,12 @@ namespace Shit {
 	template<class T>
 		static void SaveToLid(T const mask,
 									 uint64_t& lid,
-									 uint8_t const offset) {
+									 size_t const offset) {
 			*(((T*)&lid)+offset) = mask;
 		}
 	// SAVE TO LID
 	template<class T>
-		static auto SaveToLid(uint64_t& lid, uint8_t& offset) ->
+		static auto SaveToLid(uint64_t& lid, size_t& offset) ->
 		std::function<void(T const)> {
 			return [&lid, &offset] (T const mask) {
 				SaveToLid<T>(mask, lid, offset);
@@ -295,11 +304,8 @@ namespace Shit {
 				uint8_t* pbeg{*ppbeg};
 				T const cur{(T)((*(T*)pbeg) & mask)};
 				if (cur) {
-					save(0xFF);
+					save(0xff);
 					ret = true;
-				} else {
-					save(0x00);
-					ret = false;
 				}
 				return ret;
 			};
@@ -344,10 +350,10 @@ namespace Shit {
 	// CHECK
 	namespace Check {
 		// LID
-		static auto Lid(uint8_t& offset, std::string& msg) -> Func {
+		static auto Lid(size_t& offset, std::string& msg) -> Func {
 			return [&offset, &msg] (...) {
 				bool ret{};
-				if (offset <= sizeof(uint64_t)) {
+				if (offset < sizeof(uint64_t)) {
 					ret = true;
 				} else {
 					msg = "LID overflow";
@@ -387,7 +393,7 @@ namespace Shit {
 				if (((*ppbeg) + offset) < gpend) {
 					ret = true;
 				} else {
-					msg = "Out of range right: " + std::to_string(std::distance(((*ppbeg) - offset), gpbeg));
+					msg = "Out of range: " + std::to_string(std::distance(((*ppbeg) + offset), gpend));
 				}
 				return ret;
 			};
@@ -399,7 +405,7 @@ namespace Shit {
 				if (gpbeg <= ((*ppbeg) - offset)) {
 					ret = true;
 				} else {
-					msg = "Out of range left: " + std::to_string(std::distance(((*ppbeg) - offset), gpbeg));
+					msg = "Out of range: " + std::to_string(std::distance(gpbeg, ((*ppbeg) - offset)));
 				}
 				return ret;
 			};
