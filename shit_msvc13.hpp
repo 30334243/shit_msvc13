@@ -9,6 +9,7 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#include <list>
 
 // SHIT
 namespace Shit {
@@ -16,6 +17,8 @@ namespace Shit {
 	uint8_t* gpend = nullptr;
 	uint8_t gbeg{};
 	uint8_t gend{};
+	// USING
+	using Physical = std::function<bool(uint8_t**,uint8_t**)>;
 	// INIT
 	void Init(uint8_t* pbeg, uint8_t* pend) {
 		gpbeg = pbeg;
@@ -32,8 +35,6 @@ namespace Shit {
 			0xF,	0x1F,	0x3F, 0x7F,
 			0xFF
 	};
-	// USING
-	using Func = std::function<bool(uint8_t**,uint8_t**)>;
 	// READ
 	template<uint8_t SZ>
 		std::vector<uint8_t> Read(std::ifstream& src){
@@ -43,8 +44,16 @@ namespace Shit {
 			src.read((char*)ret.data(), ret.size());
 			return ret;
 		}
+	// TEST CONTAINER
+	static auto TestContainer(std::vector<std::vector<uint8_t>>& vvec) -> Physical {
+		return [&vvec] (uint8_t** ppbeg, uint8_t** ppend) {
+			std::vector<uint8_t> vec{*ppend, *ppbeg};
+			vvec.emplace_back(vec);
+			return true;
+		};
+	}
 	// TEST
-	static auto Test(std::vector<uint8_t>& vec) -> Func {
+	static auto Test(std::vector<uint8_t>& vec) -> Physical {
 		return [&vec] (uint8_t** ppbeg, uint8_t** ppend) {
 			vec.resize(*ppend - *ppbeg);
 			std::copy(*ppbeg, *ppend, vec.data());
@@ -59,7 +68,7 @@ namespace Shit {
 		}
 	// WRITE
 	template<uint8_t SZ>
-		static auto Write(std::ofstream& dst) -> Func {
+		static auto Write(std::ofstream& dst) -> Physical {
 			return [&dst] (uint8_t** ppbeg, uint8_t** ppend) {
 				uint8_t const* pbeg{*ppbeg};
 				uint8_t const* pend{*ppend};
@@ -69,7 +78,7 @@ namespace Shit {
 			};
 		}
 	// INVERSION
-	auto Inversion() -> Func {
+	auto Inversion() -> Physical {
 		return [] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			while (pbeg < *ppend) {
@@ -80,7 +89,7 @@ namespace Shit {
 		};
 	}
 	// XOR
-	auto Xor(std::vector<uint8_t> const& args) -> Func {
+	auto Xor(std::vector<uint8_t> const& args) -> Physical {
 		return [args] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			for (auto& elm : args) {
@@ -91,7 +100,7 @@ namespace Shit {
 		};
 	}
 	// MOD
-	auto Mod(std::vector<uint8_t> const& args) -> Func {
+	auto Mod(std::vector<uint8_t> const& args) -> Physical {
 		return [args] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			for (auto& elm : args) {
@@ -101,15 +110,50 @@ namespace Shit {
 			return true;
 		};
 	}
+	// 
+	template<class T>
+		uint8_t* Every(uint8_t* pbeg,
+					  std::vector<uint64_t> const& args,
+					  std::vector<Physical> const& post_processing) {
+			enum {kOffset, kMask, kSkip};
+			uint8_t const cur{(T)(*((T*)pbeg))};
+			size_t const sz{(cur & args[kMask]) + args[kSkip]};
+			gpbeg = pbeg;
+			uint8_t* pend{pbeg + sz};
+			gpend = pend;
+			for (auto func : post_processing) {
+				func(&pbeg, &pend);
+			}
+			return pend;
+		}
+	// EVERY
+	static auto Every(std::vector<uint64_t> const& args,
+							std::vector<Physical> const& post_processing) -> Physical {
+		return [args, post_processing] (uint8_t** ppbeg, uint8_t** ppend) {
+			uint8_t* pbeg{*ppbeg};
+			while (pbeg < *ppend) {
+				if (args[1] <= 0xFF) {
+					pbeg = Every<uint8_t>(pbeg, args, post_processing);
+				} else if (args[1] <= 0xFFFF) {
+					pbeg = Every<uint16_t>(pbeg, args, post_processing);
+				} else if (args[1] <= 0xFFFFFFFF) {
+					pbeg = Every<uint32_t>(pbeg, args, post_processing);
+				} else if (args[1] <= 0xFFFFFFFFFFFFFFFF) {
+					pbeg = Every<uint64_t>(pbeg, args, post_processing);
+				}
+			}
+			return true;
+		};
+	}
 	// SHIFT RIGHT
-	static auto Shr(size_t const offset) -> Func {
+	static auto Shr(size_t const offset) -> Physical {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			(*ppbeg) += offset;
 			return true;
 		};
 	}
 	// SHIFT LEFT
-	static auto Shl(size_t const offset) -> Func {
+	static auto Shl(size_t const offset) -> Physical {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			(*ppbeg) -= offset;
 			return true;
@@ -134,7 +178,7 @@ namespace Shit {
 		return ret;
 	}
 	// SHIFT RIGHT IN BITS
-	static auto ShrInBits(size_t const offset) -> Func {
+	static auto ShrInBits(size_t const offset) -> Physical {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* tmp_pbeg{(*ppbeg)};
 			uint8_t old{};
@@ -149,7 +193,7 @@ namespace Shit {
 		};
 	}
 	// SHIFT LEFT IN BITS
-	static auto ShlInBits(size_t const offset) -> Func {
+	static auto ShlInBits(size_t const offset) -> Physical {
 		return [offset] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* tmp_pend{(*ppend)+1};
 			uint8_t old{};
@@ -164,7 +208,7 @@ namespace Shit {
 		};
 	}
 	// CROP
-	static auto Crop(size_t const skip_beg, size_t const skip_end = 0) -> Func {
+	static auto Crop(size_t const skip_beg, size_t const skip_end = 0) -> Physical {
 		return [skip_beg, skip_end] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			pbeg += skip_beg;
@@ -195,7 +239,7 @@ namespace Shit {
 		}
 	// FILTER
 	template<class T, class Save>
-		static auto Filter(T const mask, T const val, Save save) -> Func {
+		static auto Filter(T const mask, T const val, Save save) -> Physical {
 			return [mask, val, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -214,7 +258,7 @@ namespace Shit {
 	template<class T, class Save>
 		static auto Filter(T const mask,
 								 std::vector<uint64_t> const& vec,
-								 Save save) -> Func {
+								 Save save) -> Physical {
 			return [mask, vec, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				for (auto& val : vec) {
@@ -225,7 +269,7 @@ namespace Shit {
 		}
 	// FILTER NOT
 	template<class T, class Save>
-		static auto FilterNot(T const mask, T const val, Save save) -> Func {
+		static auto FilterNot(T const mask, T const val, Save save) -> Physical {
 			return [mask, val, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -243,7 +287,7 @@ namespace Shit {
 	template<class T, class Save>
 		static auto FilterNot(T const mask,
 									 std::vector<uint64_t> const& vec,
-									 Save save) -> Func {
+									 Save save) -> Physical {
 			return [mask, vec, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{true};
 				for (auto& val : vec) {
@@ -254,7 +298,7 @@ namespace Shit {
 		}
 	// EQUAL
 	template<class T, class Save>
-		static auto Eq(T const val, Save save) -> Func {
+		static auto Eq(T const val, Save save) -> Physical {
 			return [val, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -271,7 +315,7 @@ namespace Shit {
 	// EQUAL
 	template<class T, class Save>
 		static auto Eq(std::vector<uint64_t> const& vec,
-							Save save) -> Func {
+							Save save) -> Physical {
 			return [vec, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				for (auto& val : vec) {
@@ -282,7 +326,7 @@ namespace Shit {
 		}
 	// EQUAL NOT
 	template<class T, class Save>
-		static auto EqNot(T const val, Save save) -> Func {
+		static auto EqNot(T const val, Save save) -> Physical {
 			return [val, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -299,7 +343,7 @@ namespace Shit {
 	// EQUAL NOT
 	template<class T, class Save>
 		static auto EqNot(std::vector<uint64_t> const& vec,
-								Save save) -> Func {
+								Save save) -> Physical {
 			return [vec, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{true};
 				for (auto& val : vec) {
@@ -310,7 +354,7 @@ namespace Shit {
 		}
 	// SPLIT
 	template<class T, class Save>
-		static auto Split(T const mask, Save save) -> Func {
+		static auto Split(T const mask, Save save) -> Physical {
 			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				uint8_t* pbeg{*ppbeg};
 				T const cur{(T)((*(T*)pbeg) & mask)};
@@ -320,7 +364,7 @@ namespace Shit {
 		}
 	// SPLIT NOT
 	template<class T, class Save>
-		static auto SplitNot(T const mask, Save save) -> Func {
+		static auto SplitNot(T const mask, Save save) -> Physical {
 			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				uint8_t* pbeg{*ppbeg};
 				T const cur{(T)((*(T*)pbeg) & mask)};
@@ -330,7 +374,7 @@ namespace Shit {
 		}
 	// AND
 	template<class T, class Save>
-		static auto And(T const mask, Save save) -> Func {
+		static auto And(T const mask, Save save) -> Physical {
 			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -344,7 +388,7 @@ namespace Shit {
 		}
 	// AND NOT
 	template<class T, class Save>
-		static auto AndNot(T const mask, Save save) -> Func {
+		static auto AndNot(T const mask, Save save) -> Physical {
 			return [mask, save] (uint8_t** ppbeg, uint8_t** ppend) {
 				bool ret{};
 				uint8_t* pbeg{*ppbeg};
@@ -361,7 +405,7 @@ namespace Shit {
 		}
 	// INSERT
 	static auto Insert(uint64_t const sz,
-							 std::vector<uint8_t> const& data) -> Func {
+							 std::vector<uint8_t> const& data) -> Physical {
 		return [sz, data] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			uint8_t* pend{*ppend};
@@ -373,7 +417,7 @@ namespace Shit {
 		};
 	}
 	// REPLACE
-	static auto Replace(std::vector<uint8_t> const& data) -> Func {
+	static auto Replace(std::vector<uint8_t> const& data) -> Physical {
 		return [data] (uint8_t** ppbeg, uint8_t** ppend) {
 			std::copy(data.begin(), data.end(), *ppbeg);
 			return true;
@@ -382,7 +426,7 @@ namespace Shit {
 	// CHECK
 	namespace Check {
 		// LID
-		static auto Lid(size_t& offset, std::string& msg) -> Func {
+		static auto Lid(size_t& offset, std::string& msg) -> Physical {
 			return [&offset, &msg] (...) {
 				bool ret{};
 				if (offset < sizeof(uint64_t)) {
@@ -400,7 +444,7 @@ namespace Shit {
 			return pbeg < pend;
 		}
 		// OUT OF RANGE
-		static auto OutOfRange() -> Func {
+		static auto OutOfRange() -> Physical {
 			return [] (uint8_t** ppbeg, uint8_t** ppend) {
 				return OutOfRange(ppbeg, ppend);
 			};
@@ -409,7 +453,7 @@ namespace Shit {
 		static auto OutOfRange(size_t const beg,
 									  size_t const end,
 									  size_t& counter,
-									  std::string& msg) -> Func {
+									  std::string& msg) -> Physical {
 			return [beg, end, &counter, &msg] (uint8_t**, uint8_t**) {
 				bool ret{(gpbeg + beg) < (gpend - end)};
 				if (!ret) {
@@ -419,7 +463,7 @@ namespace Shit {
 			};
 		}
 		// OUT OF RANGE RIGHT
-		static auto OutOfRangeRight(size_t const offset, std::string& msg) -> Func {
+		static auto OutOfRangeRight(size_t const offset, std::string& msg) -> Physical {
 			return [offset, &msg] (uint8_t** ppbeg, uint8_t**) {
 				bool ret{};
 				if (((*ppbeg) + offset) <= gpend) {
@@ -431,7 +475,7 @@ namespace Shit {
 			};
 		}
 		// OUT OF RANGE LEFT
-		static auto OutOfRangeLeft(size_t const offset, std::string& msg) -> Func {
+		static auto OutOfRangeLeft(size_t const offset, std::string& msg) -> Physical {
 			return [offset, &msg] (uint8_t** ppbeg, uint8_t**) {
 				bool ret{};
 				if (gpbeg <= ((*ppbeg) - offset)) {
