@@ -10,6 +10,7 @@
 #include <iostream>
 #include <string>
 #include <list>
+#include <map>
 
 // SHIT
 namespace Shit {
@@ -19,7 +20,8 @@ namespace Shit {
 	uint8_t gend{};
 	// USING
 	using Physical = std::function<bool(uint8_t**,uint8_t**)>;
-	// INIT
+	using DefragFunc = std::function<void(uint8_t*,uint8_t*,std::map<uint64_t,std::vector<uint8_t>>&)>;
+	// INIT>
 	void Init(uint8_t* pbeg, uint8_t* pend) {
 		gpbeg = pbeg;
 		gpend = pend;
@@ -47,7 +49,7 @@ namespace Shit {
 	// TEST CONTAINER
 	static auto TestContainer(std::vector<std::vector<uint8_t>>& vvec) -> Physical {
 		return [&vvec] (uint8_t** ppbeg, uint8_t** ppend) {
-			std::vector<uint8_t> vec{*ppend, *ppbeg};
+			std::vector<uint8_t> vec{*ppbeg, *ppend};
 			vvec.emplace_back(vec);
 			return true;
 		};
@@ -110,14 +112,93 @@ namespace Shit {
 			return true;
 		};
 	}
-	// 
+	// DEFRAG ONLY
+	auto DefragOnly(std::vector<uint8_t>& vec) -> DefragFunc {
+		return [&vec] (uint8_t* pbeg, uint8_t* pend, ...) {
+			std::copy(pbeg, pend, vec.data());
+		};
+	}
+	// DEFRAG FIRST
+	auto DefragFirst(std::vector<uint8_t>& vec,
+						  uint64_t const key) -> DefragFunc {
+		return [&vec, key] (uint8_t* pbeg, uint8_t* pend,
+								  std::map<uint64_t, std::vector<uint8_t>>& defrag) {
+			auto tmp = defrag[key];
+			if (!tmp.empty()) {
+				vec = std::move(tmp);
+			}
+			defrag.insert({key, std::vector<uint8_t>{*pbeg, *pend}});
+		};
+	}
+	// DEFRAG MIDDLE
+	auto DefragMiddle(std::vector<uint8_t>& vec,
+							uint64_t const key) -> DefragFunc {
+		return [&vec, key] (uint8_t* pbeg, uint8_t* pend,
+								  std::map<uint64_t, std::vector<uint8_t>>& defrag) {
+			auto& tmp = defrag[key];
+			tmp.insert(tmp.cend(), *pbeg, *pend);
+		};
+	}
+	// DEFRAG LAST
+	auto DefragLast(std::vector<uint8_t>& vec, uint64_t const key) -> DefragFunc {
+		return [&vec, key] (uint8_t* pbeg,
+								  uint8_t* pend,
+								  std::map<uint64_t, std::vector<uint8_t>>& defrag) {
+			auto& tmp = defrag[key];
+			tmp.insert(tmp.cend(), *pbeg, *pend);
+			vec = std::move(tmp);
+		};
+	}
+	// DEFRAG
+	template<class T, class Save>
+		auto Defrag(std::vector<uint64_t> const& args,
+						std::vector<uint64_t> const& args_id,
+						std::map<uint64_t, std::vector<uint8_t>>& defrag,
+						Save save) -> Physical {
+			enum {kOffset, kMask, kVal, kOffsetId, kId};
+			return [args, args_id, &defrag, save] (uint8_t** ppbeg,
+																uint8_t** ppend) {
+				bool ret{};
+				uint8_t* pbeg{*ppbeg};
+				uint64_t key{args_id.size() ? args_id[kId] : 0};
+				auto insert = [key, &defrag] (uint8_t** ppbeg, uint8_t** ppend) {
+					auto vec = defrag[key];
+					vec.insert(vec.cend(), *ppbeg, *ppend);
+					defrag.insert({key, vec});
+				};
+				if (((*(pbeg + args[kOffset])) & args[kMask]) == args[kVal]) {
+					insert(ppbeg, ppend);
+					auto res = defrag[key];
+					uint8_t* pbeg{res.data()};
+					uint8_t* pend{pbeg + res.size()};
+					save(pbeg, pend, defrag);
+					ret = true;
+				}
+				return ret;
+			};
+		}
+	// DEFRAG
+	template<class Only, class First, class Middle, class Last>
+		auto Defrag(Only only, First first, Middle middle, Last last) -> Physical {
+			return [only, first, middle, last] (uint8_t** ppbeg, uint8_t** ppend) {
+				bool ret{true};
+				if (only(ppbeg, ppend)) {
+				} else if (first(ppbeg, ppend)) {
+				} else if (middle(ppbeg, ppend)) {
+				} else if (last(ppbeg, ppend)) {
+				} else {
+					ret = false;
+				}
+				return ret;
+			};
+		}
+	// EVERY
 	template<class T>
 		static uint8_t* Every(uint8_t* pbeg,
-					  std::vector<uint64_t> const& args,
-					  std::vector<Physical> const& post_processing) {
-			enum {kOffset, kMask, kSkip};
-			T const cur{(T const)(*((T*)pbeg))};
-			size_t const sz{(cur & args[kMask]) + args[kSkip]};
+									 std::vector<uint64_t> const& args,
+									 std::list<Physical> const& post_processing) {
+			enum {kOffset, kMask, kAdd};
+			T const cur{(T const)(*((T*)(pbeg + args[kOffset])))}; size_t const sz{(cur & args[kMask]) + args[kAdd]};
 			gpbeg = pbeg;
 			uint8_t* pend{pbeg + sz};
 			gpend = pend;
@@ -128,7 +209,7 @@ namespace Shit {
 		}
 	// EVERY
 	static auto Every(std::vector<uint64_t> const& args,
-							std::vector<Physical> const& post_processing) -> Physical {
+							std::list<Physical> const& post_processing) -> Physical {
 		return [args, post_processing] (uint8_t** ppbeg, uint8_t** ppend) {
 			uint8_t* pbeg{*ppbeg};
 			while (pbeg < *ppend) {
