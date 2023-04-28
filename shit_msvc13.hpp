@@ -112,11 +112,11 @@ namespace Shit {
 	}
 	// 
 	template<class T>
-		uint8_t* Every(uint8_t* pbeg,
+		static uint8_t* Every(uint8_t* pbeg,
 					  std::vector<uint64_t> const& args,
 					  std::vector<Physical> const& post_processing) {
 			enum {kOffset, kMask, kSkip};
-			uint8_t const cur{(T)(*((T*)pbeg))};
+			T const cur{(T const)(*((T*)pbeg))};
 			size_t const sz{(cur & args[kMask]) + args[kSkip]};
 			gpbeg = pbeg;
 			uint8_t* pend{pbeg + sz};
