@@ -113,46 +113,47 @@ namespace Shit {
 		};
 	}
 	// DEFRAG ONLY
-	auto DefragOnly(std::vector<uint8_t>& vec) -> DefragFunc {
-		return [&vec] (uint8_t* pbeg, uint8_t* pend, ...) {
-			std::copy(pbeg, pend, vec.data());
+	auto DefragOnly(std::vector<std::vector<uint8_t>>& vvec, uint64_t const) -> DefragFunc {
+		return [&vvec] (uint8_t* pbeg, uint8_t* pend, ...) {
+			vvec.emplace_back(std::vector<uint8_t>{pbeg, pend});
 		};
 	}
 	// DEFRAG FIRST
-	auto DefragFirst(std::vector<uint8_t>& vec,
+	auto DefragFirst(std::vector<std::vector<uint8_t>>& vvec,
 						  uint64_t const key) -> DefragFunc {
-		return [&vec, key] (uint8_t* pbeg, uint8_t* pend,
-								  std::map<uint64_t, std::vector<uint8_t>>& defrag) {
-			auto tmp = defrag[key];
+		return [&vvec, key] (uint8_t* pbeg, uint8_t* pend,
+									std::map<uint64_t, std::vector<uint8_t>>& defrag) {
+			auto& tmp = defrag[key];
 			if (!tmp.empty()) {
-				vec = std::move(tmp);
+				vvec.emplace_back(std::move(tmp));
 			}
-			defrag.insert({key, std::vector<uint8_t>{*pbeg, *pend}});
+			tmp = std::vector<uint8_t>{*pbeg, *pend};
 		};
 	}
 	// DEFRAG MIDDLE
-	auto DefragMiddle(std::vector<uint8_t>& vec,
+	auto DefragMiddle(std::vector<std::vector<uint8_t>>& vvec,
 							uint64_t const key) -> DefragFunc {
-		return [&vec, key] (uint8_t* pbeg, uint8_t* pend,
-								  std::map<uint64_t, std::vector<uint8_t>>& defrag) {
+		return [&vvec, key] (uint8_t* pbeg, uint8_t* pend,
+									std::map<uint64_t, std::vector<uint8_t>>& defrag) {
 			auto& tmp = defrag[key];
 			tmp.insert(tmp.cend(), *pbeg, *pend);
 		};
 	}
 	// DEFRAG LAST
-	auto DefragLast(std::vector<uint8_t>& vec, uint64_t const key) -> DefragFunc {
-		return [&vec, key] (uint8_t* pbeg,
+	auto DefragLast(std::vector<std::vector<uint8_t>>& vvec,
+						 uint64_t const key) -> DefragFunc {
+		return [&vvec, key] (uint8_t* pbeg,
 								  uint8_t* pend,
 								  std::map<uint64_t, std::vector<uint8_t>>& defrag) {
 			auto& tmp = defrag[key];
 			tmp.insert(tmp.cend(), *pbeg, *pend);
-			vec = std::move(tmp);
+			vvec.emplace_back(std::move(tmp));
 		};
 	}
 	// DEFRAG
 	template<class T, class Save>
-		auto Defrag(std::vector<uint64_t> const& args,
-						std::vector<uint64_t> const& args_id,
+		auto Defrag(std::vector<uint64_t> args,
+						std::vector<uint64_t> args_id,
 						std::map<uint64_t, std::vector<uint8_t>>& defrag,
 						Save save) -> Physical {
 			enum {kOffset, kMask, kVal, kOffsetId, kId};
@@ -164,7 +165,7 @@ namespace Shit {
 				auto insert = [key, &defrag] (uint8_t** ppbeg, uint8_t** ppend) {
 					auto vec = defrag[key];
 					vec.insert(vec.cend(), *ppbeg, *ppend);
-					defrag.insert({key, vec});
+					defrag[key] = std::move(vec);
 				};
 				if (((*(pbeg + args[kOffset])) & args[kMask]) == args[kVal]) {
 					insert(ppbeg, ppend);
@@ -178,20 +179,18 @@ namespace Shit {
 			};
 		}
 	// DEFRAG
-	template<class Only, class First, class Middle, class Last>
-		auto Defrag(Only only, First first, Middle middle, Last last) -> Physical {
-			return [only, first, middle, last] (uint8_t** ppbeg, uint8_t** ppend) {
-				bool ret{true};
-				if (only(ppbeg, ppend)) {
-				} else if (first(ppbeg, ppend)) {
-				} else if (middle(ppbeg, ppend)) {
-				} else if (last(ppbeg, ppend)) {
-				} else {
-					ret = false;
+	auto Defrag(std::list<Physical> lst) -> Physical {
+		return [lst] (uint8_t** ppbeg, uint8_t** ppend) {
+			bool ret{true};
+			for (auto& func : lst) {
+				if (func(ppbeg, ppend)) {
+					ret = true;
+					break;
 				}
-				return ret;
-			};
-		}
+			}
+			return ret;
+		};
+	}
 	// EVERY
 	template<class T>
 		static uint8_t* Every(uint8_t* pbeg,
